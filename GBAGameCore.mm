@@ -25,7 +25,7 @@
  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#import "GBAGameEmu.h"
+#import "GBAGameCore.h"
 #import <OERingBuffer.h>
 #import "OEGBASystemResponderClient.h"
 #import <OpenGL/gl.h>
@@ -37,14 +37,14 @@
 #define SAMPLEFRAME 800
 #define SIZESOUNDBUFFER SAMPLEFRAME*4
 
-@interface GBAGameEmu () <OEGBASystemResponderClient>
+@interface GBAGameCore () <OEGBASystemResponderClient>
 @end
 
 NSUInteger GBAEmulatorValues[] = { SNES_DEVICE_ID_JOYPAD_A, SNES_DEVICE_ID_JOYPAD_B, SNES_DEVICE_ID_JOYPAD_SELECT, SNES_DEVICE_ID_JOYPAD_START, SNES_DEVICE_ID_JOYPAD_RIGHT, SNES_DEVICE_ID_JOYPAD_LEFT, SNES_DEVICE_ID_JOYPAD_UP, SNES_DEVICE_ID_JOYPAD_DOWN, SNES_DEVICE_ID_JOYPAD_R, SNES_DEVICE_ID_JOYPAD_L };
 NSString *GBAEmulatorKeys[] = { @"Joypad@ A", @"Joypad@ B", @"Joypad@ Select", @"Joypad@ Start", @"Joypad@ Right", @"Joypad@ Left", @"Joypad@ Up", @"Joypad@ Down", @"Joypad@ R", @"Joypad@ L"};
 
-GBAGameEmu *current;
-@implementation GBAGameEmu
+GBAGameCore *current;
+@implementation GBAGameCore
 
 static uint16_t conv555Rto565(uint16_t p)
 {

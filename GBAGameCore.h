@@ -35,7 +35,7 @@ extern NSString *GBAEmulatorNames[];
 
 @class OERingBuffer;
 
-@interface GBAGameEmu : OEGameCore
+@interface GBAGameCore : OEGameCore
 {
     @public
     uint32    controlPad[MAC_MAX_PLAYERS];
