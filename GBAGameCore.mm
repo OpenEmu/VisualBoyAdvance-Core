@@ -32,6 +32,7 @@
 
 #include "libsnes.hpp"
 #include "Sound.h"
+#include "Cheats.h"
 
 @interface GBAGameCore () <OEGBASystemResponderClient>
 {
@@ -397,6 +398,51 @@ static void writeSaveFile(const char* path, int type)
     free(serial_data);
 
     return YES;
+}
+
+- (void)setCheat:(NSString *)code setType:(NSString *)type setEnabled:(BOOL)enabled
+{
+    // Sanitize
+    code = [code stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    
+    // VBA expects cheats UPPERCASE
+    code = [code uppercaseString];
+    
+    // Remove any spaces
+    code = [code stringByReplacingOccurrencesOfString:@" " withString:@""];
+    
+    NSArray *multipleCodes = [[NSArray alloc] init];
+    multipleCodes = [code componentsSeparatedByString:@"+"];
+    
+    for (NSString *singleCode in multipleCodes)
+    {
+        if ([singleCode length] == 11 || [singleCode length] == 13 || [singleCode length] == 17) // Code with Address:Value
+        {
+            // XXXXXXXX:YY || XXXXXXXX:YYYY || XXXXXXXX:YYYYYYYY
+            cheatsAddCheatCode([singleCode UTF8String], "code");
+        }
+        
+        if ([singleCode length] == 12) // v1 and v2 GameShark/CodeBreaker code
+        {
+            // VBA expects 12-character GameShark/CodeBreaker codes in format: XXXXXXXX YYYY
+            NSMutableString *formattedCode = [NSMutableString stringWithString:singleCode];
+            [formattedCode insertString:@" " atIndex:8];
+            
+            cheatsAddCBACode([formattedCode UTF8String], "code");
+        }
+        
+        if ([singleCode length] == 16) // GameShark and Action Replay
+        {
+            if ([type isEqual: @"GameShark"])
+                cheatsAddGSACode([singleCode UTF8String], "code", false);
+            
+            else if ([type isEqual: @"Action Replay"])
+                cheatsAddGSACode([singleCode UTF8String], "code", true); // true = v3 AR code
+            
+            else // default to GBA SP GameShark code (can't determine GS vs AR because same length)
+                cheatsAddGSACode([singleCode UTF8String], "code", false);
+        }
+    }
 }
 
 @end

@@ -138,9 +138,7 @@ extern void CPUCheckDMA(int,int);
 #define R14_FIQ  43
 #define SPSR_FIQ 44
 
-#ifdef USE_CHEATS
 #include "Cheats.h"
-#endif
 #include "Globals.h"
 #include "EEprom.h"
 #include "Flash.h"

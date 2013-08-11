@@ -1588,6 +1588,10 @@ int thumbExecute()
     
     clockTicks = 0;
 
+    if( cheatsEnabled ) {
+        cpuMasterCodeCheck();
+    }
+
     //if ((bus.armNextPC & 0x0803FFFF) == 0x08020000)
     //    bus.busPrefetchCount=0x100;
 

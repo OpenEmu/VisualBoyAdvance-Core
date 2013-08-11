@@ -24,6 +24,8 @@
 	<string>GBAGameCore</string>
 	<key>OEGameCorePlayerCount</key>
 	<string>1</string>
+	<key>OEGameCoreSupportsCheatCode</key>
+	<true/>
 	<key>OEProjectURL</key>
 	<string>http://vba-m.com/</string>
 	<key>OESystemIdentifiers</key>

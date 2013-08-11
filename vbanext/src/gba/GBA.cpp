@@ -10,7 +10,7 @@
 #include <ppu_intrinsics.h>
 #endif
 
-static const int table [0x40] =
+extern const int table [0x40] =
 {
 		0xFF10,     0,0xFF11,0xFF12,0xFF13,0xFF14,     0,     0,
 		0xFF16,0xFF17,     0,     0,0xFF18,0xFF19,     0,     0,
@@ -32,9 +32,7 @@ static const int table [0x40] =
 #include "Sram.h"
 #include "bios_.h"
 #include "../NLS.h"
-#ifdef USE_CHEATS
 #include "Cheats.h"
-#endif
 #ifdef ELF
 #include "elf.h"
 #endif
@@ -114,11 +112,8 @@ bool speedup = false;
 bool cpuIsMultiBoot = false;
 bool speedHack = true;
 int cpuSaveType = 0;
-#ifdef USE_CHEATS
 bool cheatsEnabled = true;
-#else
-bool cheatsEnabled = false;
-#endif
+//bool cheatsEnabled = false;
 bool enableRtc = false;
 bool mirroringEnable = false;
 bool skipSaveGameBattery = false;
@@ -5713,14 +5708,12 @@ updateLoop:
 								}
 							}
 
-#ifdef USE_CHEATS
 							uint32_t ext = (joy >> 10);
 							// If no (m) code is enabled, apply the cheats at each LCDline
 							if((cheatsEnabled) && (mastercode==0))
 								remainingTicks += cheatsCheckKeys(P1^0x3FF, ext);
 #ifdef USE_FRAMESKIP
 							speedup = (ext & 1) ? true : false;
-#endif
 #endif
 
 							graphics.DISPSTAT |= 1;

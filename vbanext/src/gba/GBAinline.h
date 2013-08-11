@@ -8,7 +8,7 @@
 #include "GBAcpu.h"
 
 extern const u32 objTilesAddress[3];
-
+extern const int table [0x40];
 extern bool stopState;
 extern bool holdState;
 extern int holdType;
