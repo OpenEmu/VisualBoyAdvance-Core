@@ -279,10 +279,6 @@ static void writeSaveFile(const char* path, int type)
     return OEIntSizeMake(3, 2);
 }
 
-- (void)setupEmulation
-{
-}
-
 - (void)resetEmulation
 {
     snes_reset();
