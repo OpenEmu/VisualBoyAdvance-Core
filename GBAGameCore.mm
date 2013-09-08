@@ -48,11 +48,14 @@
 NSUInteger GBAEmulatorValues[] = { SNES_DEVICE_ID_JOYPAD_UP, SNES_DEVICE_ID_JOYPAD_DOWN, SNES_DEVICE_ID_JOYPAD_LEFT, SNES_DEVICE_ID_JOYPAD_RIGHT, SNES_DEVICE_ID_JOYPAD_A, SNES_DEVICE_ID_JOYPAD_B, SNES_DEVICE_ID_JOYPAD_L, SNES_DEVICE_ID_JOYPAD_R, SNES_DEVICE_ID_JOYPAD_START, SNES_DEVICE_ID_JOYPAD_SELECT };
 NSString *GBAEmulatorKeys[] = { @"Joypad@ Up", @"Joypad@ Down", @"Joypad@ Left", @"Joypad@ Right", @"Joypad@ A", @"Joypad@ B", @"Joypad@ L", @"Joypad@ R", @"Joypad@ Start", @"Joypad@ Select" };
 
-GBAGameCore *current;
+static GBAGameCore *_current;
+
 @implementation GBAGameCore
 
 static void video_callback(const uint16_t *data, unsigned width, unsigned height)
 {
+    GET_CURRENT_AND_RETURN();
+
     // Normally our pitch is 2048 bytes.
     int stride = 256;
     // If we have an interlaced mode, pitch is 1024 bytes.
@@ -76,6 +79,8 @@ static void video_callback(const uint16_t *data, unsigned width, unsigned height
 
 void systemOnWriteDataToSoundBuffer(int16_t *finalWave, int length)
 {
+    GET_CURRENT_AND_RETURN();
+
     [[current ringBufferAtIndex:0] write:finalWave maxLength:2*length];
 }
 
@@ -86,6 +91,8 @@ static void input_poll_callback(void)
 
 static int16_t input_state_callback(bool port, unsigned device, unsigned index, unsigned devid)
 {
+    GET_CURRENT_AND_RETURN(0);
+
     //NSLog(@"polled input: port: %d device: %d id: %d", port, device, devid);
 
 	if(port == SNES_PORT_1 & device == SNES_DEVICE_JOYPAD)
@@ -98,6 +105,8 @@ static int16_t input_state_callback(bool port, unsigned device, unsigned index, 
 
 static bool environment_callback(unsigned cmd, void *data)
 {
+    GET_CURRENT_AND_RETURN(false);
+
     switch(cmd)
     {
         case SNES_ENVIRONMENT_SET_TIMING :
@@ -182,7 +191,7 @@ static void writeSaveFile(const char* path, int type)
         videoBuffer = (uint16_t *)malloc(240 * 160 * 2);
     }
 	
-	current = self;
+	_current = self;
 
 	return self;
 }
@@ -247,7 +256,7 @@ static void writeSaveFile(const char* path, int type)
 
         //snes_get_region();
 
-        soundSetSampleRate(current->sampleRate);
+        soundSetSampleRate(sampleRate);
 
         snes_run();
 
