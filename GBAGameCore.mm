@@ -208,7 +208,7 @@ static void writeSaveFile(const char* path, int type)
     snes_run();
 }
 
-- (BOOL)loadFileAtPath:(NSString *)path
+- (BOOL)loadFileAtPath:(NSString *)path error:(NSError **)error
 {
 	memset(pad, 0, sizeof(int16_t) * 10);
 
