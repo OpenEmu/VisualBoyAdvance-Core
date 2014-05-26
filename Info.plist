@@ -22,10 +22,16 @@
 	<string>OEGameCoreController</string>
 	<key>OEGameCoreClass</key>
 	<string>GBAGameCore</string>
+	<key>OEGameCoreOptions</key>
+	<dict>
+		<key>openemu.system.gba</key>
+		<dict>
+			<key>OEGameCoreSupportsCheatCode</key>
+			<true/>
+		</dict>
+	</dict>
 	<key>OEGameCorePlayerCount</key>
 	<string>1</string>
-	<key>OEGameCoreSupportsCheatCode</key>
-	<true/>
 	<key>OEProjectURL</key>
 	<string>http://vba-m.com/</string>
 	<key>OESystemIdentifiers</key>
