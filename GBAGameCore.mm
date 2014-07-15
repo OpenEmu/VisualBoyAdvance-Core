@@ -38,7 +38,7 @@
 {
     uint16_t *videoBuffer;
     int videoWidth, videoHeight;
-    int16_t pad[1][10];
+    int16_t pad[1][OEGBAButtonCount];
     NSString *romName;
     double sampleRate;
 }
@@ -46,7 +46,6 @@
 @end
 
 NSUInteger GBAEmulatorValues[] = { SNES_DEVICE_ID_JOYPAD_UP, SNES_DEVICE_ID_JOYPAD_DOWN, SNES_DEVICE_ID_JOYPAD_LEFT, SNES_DEVICE_ID_JOYPAD_RIGHT, SNES_DEVICE_ID_JOYPAD_A, SNES_DEVICE_ID_JOYPAD_B, SNES_DEVICE_ID_JOYPAD_L, SNES_DEVICE_ID_JOYPAD_R, SNES_DEVICE_ID_JOYPAD_START, SNES_DEVICE_ID_JOYPAD_SELECT };
-NSString *GBAEmulatorKeys[] = { @"Joypad@ Up", @"Joypad@ Down", @"Joypad@ Left", @"Joypad@ Right", @"Joypad@ A", @"Joypad@ B", @"Joypad@ L", @"Joypad@ R", @"Joypad@ Start", @"Joypad@ Select" };
 
 static GBAGameCore *_current;
 
@@ -97,8 +96,6 @@ static int16_t input_state_callback(bool port, unsigned device, unsigned index, 
 
 	if(port == SNES_PORT_1 & device == SNES_DEVICE_JOYPAD)
         return current->pad[0][devid];
-    else if(port == SNES_PORT_2 & device == SNES_DEVICE_JOYPAD)
-        return current->pad[1][devid];
 
     return 0;
 }
@@ -118,13 +115,11 @@ static bool environment_callback(unsigned cmd, void *data)
         }
         case SNES_ENVIRONMENT_GET_FULLPATH :
         {
-            //*(const char**)data = (const char*)current->romName;
             *(const char**)data = [current->romName cStringUsingEncoding:NSUTF8StringEncoding];
             NSLog(@"Environ FULLPATH: \"%@\"\n", current->romName);
             break;
         }
         default :
-            NSLog(@"Environ UNSUPPORTED (#%u)!\n", cmd);
             return false;
     }
 
@@ -223,10 +218,6 @@ static void writeSaveFile(const char* path, int type)
     size = [dataObj length];
     data = (uint8_t *)[dataObj bytes];
 
-    //remove copier header, if it exists
-    //ssif((size & 0x7fff) == 512) memmove(data, data + 512, size -= 512);
-
-    //memory.copy(data, size);
     snes_set_environment(environment_callback);
 	snes_init();
 	
@@ -241,7 +232,6 @@ static void writeSaveFile(const char* path, int type)
 
         NSString *batterySavesDirectory = [self batterySavesDirectoryPath];
 
-        //        if((batterySavesDirectory != nil) && ![batterySavesDirectory isEqualToString:@""])
         if([batterySavesDirectory length] != 0)
         {
             [[NSFileManager defaultManager] createDirectoryAtPath:batterySavesDirectory withIntermediateDirectories:YES attributes:nil error:NULL];
@@ -250,11 +240,6 @@ static void writeSaveFile(const char* path, int type)
 
             loadSaveFile([filePath UTF8String], SNES_MEMORY_CARTRIDGE_RAM);
         }
-
-        snes_set_controller_port_device(SNES_PORT_1, SNES_DEVICE_JOYPAD);
-        //snes_set_controller_port_device(SNES_PORT_2, SNES_DEVICE_NONE);
-
-        //snes_get_region();
 
         soundSetSampleRate(sampleRate);
 
@@ -274,7 +259,6 @@ static void writeSaveFile(const char* path, int type)
 
 - (OEIntRect)screenRect
 {
-    // hope this handles hires :/
     return OEIntRectMake(0, 0, videoWidth, videoHeight);
 }
 
@@ -312,8 +296,6 @@ static void writeSaveFile(const char* path, int type)
         writeSaveFile([filePath UTF8String], SNES_MEMORY_CARTRIDGE_RAM);
     }
 
-    NSLog(@"snes term");
-    //snes_unload_cartridge();
     snes_term();
     [super stopEmulation];
 }
