@@ -391,6 +391,10 @@ static void writeSaveFile(const char* path, int type)
     block(YES, nil);
 }
 
+#pragma mark - Cheats
+
+NSMutableDictionary *cheatList = [[NSMutableDictionary alloc] init];
+
 - (void)setCheat:(NSString *)code setType:(NSString *)type setEnabled:(BOOL)enabled
 {
     // Sanitize
@@ -402,36 +406,52 @@ static void writeSaveFile(const char* path, int type)
     // Remove any spaces
     code = [code stringByReplacingOccurrencesOfString:@" " withString:@""];
     
-    NSArray *multipleCodes = [[NSArray alloc] init];
-    multipleCodes = [code componentsSeparatedByString:@"+"];
+    if (enabled)
+        [cheatList setValue:@YES forKey:code];
+    else
+        [cheatList removeObjectForKey:code];
     
-    for (NSString *singleCode in multipleCodes)
+    cheatsDeleteAll(false); // Old values not restored by default. Dunno if matters much to cheaters
+    
+    NSArray *multipleCodes = [[NSArray alloc] init];
+    
+    // Apply enabled cheats found in dictionary
+    for (id key in cheatList)
     {
-        if ([singleCode length] == 11 || [singleCode length] == 13 || [singleCode length] == 17) // Code with Address:Value
+        if ([[cheatList valueForKey:key] isEqual:@YES])
         {
-            // XXXXXXXX:YY || XXXXXXXX:YYYY || XXXXXXXX:YYYYYYYY
-            cheatsAddCheatCode([singleCode UTF8String], "code");
-        }
-        
-        if ([singleCode length] == 12) // v1 and v2 GameShark/CodeBreaker code
-        {
-            // VBA expects 12-character GameShark/CodeBreaker codes in format: XXXXXXXX YYYY
-            NSMutableString *formattedCode = [NSMutableString stringWithString:singleCode];
-            [formattedCode insertString:@" " atIndex:8];
+            // Handle multi-line cheats
+            multipleCodes = [key componentsSeparatedByString:@"+"];
             
-            cheatsAddCBACode([formattedCode UTF8String], "code");
-        }
-        
-        if ([singleCode length] == 16) // GameShark and Action Replay
-        {
-            if ([type isEqual: @"GameShark"])
-                cheatsAddGSACode([singleCode UTF8String], "code", false);
-            
-            else if ([type isEqual: @"Action Replay"])
-                cheatsAddGSACode([singleCode UTF8String], "code", true); // true = v3 AR code
-            
-            else // default to GBA SP GameShark code (can't determine GS vs AR because same length)
-                cheatsAddGSACode([singleCode UTF8String], "code", false);
+            for (NSString *singleCode in multipleCodes)
+            {
+                if ([singleCode length] == 11 || [singleCode length] == 13 || [singleCode length] == 17) // Code with Address:Value
+                {
+                    // XXXXXXXX:YY || XXXXXXXX:YYYY || XXXXXXXX:YYYYYYYY
+                    cheatsAddCheatCode([singleCode UTF8String], "code");
+                }
+                
+                if ([singleCode length] == 12) // v1 and v2 GameShark/CodeBreaker code
+                {
+                    // VBA expects 12-character GameShark/CodeBreaker codes in format: XXXXXXXX YYYY
+                    NSMutableString *formattedCode = [NSMutableString stringWithString:singleCode];
+                    [formattedCode insertString:@" " atIndex:8];
+                    
+                    cheatsAddCBACode([formattedCode UTF8String], "code");
+                }
+                
+                if ([singleCode length] == 16) // GameShark and Action Replay
+                {
+                    if ([type isEqual: @"GameShark"])
+                        cheatsAddGSACode([singleCode UTF8String], "code", false);
+                    
+                    else if ([type isEqual: @"Action Replay"])
+                        cheatsAddGSACode([singleCode UTF8String], "code", true); // true = v3 AR code
+                    
+                    else // default to GBA SP GameShark code (can't determine GS vs AR because same length)
+                        cheatsAddGSACode([singleCode UTF8String], "code", false);
+                }
+            }
         }
     }
 }
