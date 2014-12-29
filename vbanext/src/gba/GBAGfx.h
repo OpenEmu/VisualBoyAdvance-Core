@@ -504,12 +504,18 @@ static INLINE void gfxDrawRotScreen256(u16 control,
   int xxx = (realX >> 8);
   int yyy = (realY >> 8);
 
-  memset(line, -1, 240 * sizeof(u32));
   for(u32 x = 0; x < 240; ++x)
   {
-	  u8 color = screenBase[yyy * 240 + xxx];
-	  if(unsigned(xxx) < sizeX && unsigned(yyy) < sizeY && color)
-		  line[x] = (READ16LE(&palette[color])|prio);
+      if(xxx < 0 ||
+         yyy < 0 ||
+         xxx >= sizeX ||
+         yyy >= sizeY) {
+          line[x] = 0x80000000;
+      } else {
+          u8 color = screenBase[yyy * 240 + xxx];
+
+          line[x] = color ? (READ16LE(&palette[color])|prio) : 0x80000000;
+      }
 	  realX += dx;
 	  realY += dy;
 
