@@ -1,7 +1,6 @@
 /*
- Copyright (c) 2009, OpenEmu Team
-
-
+ Copyright (c) 2015, OpenEmu Team
+ 
  Redistribution and use in source and binary forms, with or without
  modification, are permitted provided that the following conditions are met:
  * Redistributions of source code must retain the above copyright
@@ -12,7 +11,7 @@
  * Neither the name of the OpenEmu Team nor the
  names of its contributors may be used to endorse or promote products
  derived from this software without specific prior written permission.
-
+ 
  THIS SOFTWARE IS PROVIDED BY OpenEmu Team ''AS IS'' AND ANY
  EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
  WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -30,168 +29,116 @@
 #import "OEGBASystemResponderClient.h"
 #import <OpenGL/gl.h>
 
-#include "libsnes.hpp"
-#include "Sound.h"
-#include "Cheats.h"
+#include <sys/time.h>
+#include "src/System.h"
+#include "src/Util.h"
+#include "src/gba/GBA.h"
+#include "src/gba/RTC.h"
+#include "src/gba/Sound.h"
+#include "src/common/SoundDriver.h"
+
+EmulatedSystem vba;
+int emulating = 0;
+uint32_t pad[OEGBAButtonCount];
 
 @interface GBAGameCore () <OEGBASystemResponderClient>
 {
-    uint16_t *videoBuffer;
-    int videoWidth, videoHeight;
-    int16_t pad[1][OEGBAButtonCount];
-    NSString *romName;
-    double sampleRate;
+    uint8_t *videoBuffer;
+    int32_t *soundBuffer;
+    NSURL *_romFile, *_saveFile;
+
+    NSString *_romID;
+    BOOL _enableRTC, _enableMirroring, _useBIOS, _haveFrame, _migratingSave;
+    int _flashSize, _cpuSaveType;
 }
-
+- (void)loadOverrides:(NSString *)gameID;
+- (void)writeSaveFile;
+- (void)migrateSaveFile;
 @end
-
-NSUInteger GBAEmulatorValues[] = { SNES_DEVICE_ID_JOYPAD_UP, SNES_DEVICE_ID_JOYPAD_DOWN, SNES_DEVICE_ID_JOYPAD_LEFT, SNES_DEVICE_ID_JOYPAD_RIGHT, SNES_DEVICE_ID_JOYPAD_A, SNES_DEVICE_ID_JOYPAD_B, SNES_DEVICE_ID_JOYPAD_L, SNES_DEVICE_ID_JOYPAD_R, SNES_DEVICE_ID_JOYPAD_START, SNES_DEVICE_ID_JOYPAD_SELECT };
-
-static GBAGameCore *_current;
 
 @implementation GBAGameCore
 
-static void video_callback(const uint16_t *data, unsigned width, unsigned height)
-{
-    GET_CURRENT_AND_RETURN();
-
-    // Normally our pitch is 2048 bytes.
-    int stride = 256;
-    // If we have an interlaced mode, pitch is 1024 bytes.
-    if(height == 240 || height == 478)
-        stride = 240;
-
-    current->videoWidth  = width;
-    current->videoHeight = height;
-
-    dispatch_queue_t the_queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
-
-    dispatch_apply(height, the_queue, ^(size_t y){
-        const uint16_t *src = data + y * stride;
-        uint16_t *dst = current->videoBuffer + y * 240;
-
-        memcpy(dst, src, sizeof(uint16_t)*width);
-    });
-}
-
-// TODO implement systemDrawScreen here
-
-void systemOnWriteDataToSoundBuffer(int16_t *finalWave, int length)
-{
-    GET_CURRENT_AND_RETURN();
-
-    [[current ringBufferAtIndex:0] write:finalWave maxLength:2*length];
-}
-
-static void input_poll_callback(void)
-{
-	//NSLog(@"poll callback");
-}
-
-static int16_t input_state_callback(bool port, unsigned device, unsigned index, unsigned devid)
-{
-    GET_CURRENT_AND_RETURN(0);
-
-    //NSLog(@"polled input: port: %d device: %d id: %d", port, device, devid);
-
-	if(port == SNES_PORT_1 & device == SNES_DEVICE_JOYPAD)
-        return current->pad[0][devid];
-
-    return 0;
-}
-
-static bool environment_callback(unsigned cmd, void *data)
-{
-    GET_CURRENT_AND_RETURN(false);
-
-    switch(cmd)
-    {
-        case SNES_ENVIRONMENT_SET_TIMING :
-        {
-            snes_system_timing *t = (snes_system_timing*)data;
-            current->frameInterval = t->fps;
-            current->sampleRate    = t->sample_rate;
-            return true;
-        }
-        case SNES_ENVIRONMENT_GET_FULLPATH :
-        {
-            *(const char**)data = [current->romName cStringUsingEncoding:NSUTF8StringEncoding];
-            NSLog(@"Environ FULLPATH: \"%@\"\n", current->romName);
-            break;
-        }
-        default :
-            return false;
-    }
-
-    return true;
-}
-
-static void loadSaveFile(const char *path, int type)
-{
-    FILE *file = fopen(path, "rb");
-    if(file == NULL) return;
-
-    size_t size = snes_get_memory_size(type);
-    uint8_t *data = snes_get_memory_data(type);
-
-    if(size == 0 || !data)
-    {
-        fclose(file);
-        return;
-    }
-
-    int rc = fread(data, sizeof(uint8_t), size, file);
-    if(rc != size)
-    {
-        NSLog(@"Couldn't load save file.");
-    }
-
-    NSLog(@"Loaded save file: %s", path);
-
-    fclose(file);
-}
-
-static void writeSaveFile(const char* path, int type)
-{
-    size_t size = snes_get_memory_size(type);
-    uint8_t *data = snes_get_memory_data(type);
-
-    if(data && size > 0)
-    {
-        FILE *file = fopen(path, "wb");
-        if(file != NULL)
-        {
-            NSLog(@"Saving state %s. Size: %d bytes.", path, (int)size);
-            if(fwrite(data, sizeof(uint8_t), size, file) != size)
-                NSLog(@"Did not save state properly.");
-            fclose(file);
-        }
-    }
-}
-
-- (oneway void)didPushGBAButton:(OEGBAButton)button forPlayer:(NSUInteger)player;
-{
-    pad[player-1][GBAEmulatorValues[button]] = 1;
-}
-
-- (oneway void)didReleaseGBAButton:(OEGBAButton)button forPlayer:(NSUInteger)player;
-{
-    pad[player-1][GBAEmulatorValues[button]] = 0;
-}
+static __weak GBAGameCore *_current;
 
 - (id)init
 {
     if((self = [super init]))
     {
-        videoBuffer = (uint16_t *)malloc(240 * 160 * 2);
+        videoBuffer = (uint8_t *) malloc(240 * 160 * 4);
+        vba = GBASystem;
     }
-	
-	_current = self;
 
-	return self;
+    _current = self;
+
+    return self;
 }
 
-#pragma mark Exectuion
+- (void)dealloc
+{
+    free(videoBuffer);
+}
+
+# pragma mark - Execution
+
+- (BOOL)loadFileAtPath:(NSString *)path error:(NSError **)error
+{
+    memset(pad, 0, sizeof(uint32_t) * OEGBAButtonCount);
+
+    _romFile = [NSURL fileURLWithPath:path];
+
+    int loaded = CPULoadRom([path UTF8String]);
+
+    if(loaded == 0)
+        return NO;
+
+    utilUpdateSystemColorMaps(false);
+
+    // Read the cart's Game ID
+    char gameID[5];
+    gameID[0] = rom[0xac];
+    gameID[1] = rom[0xad];
+    gameID[2] = rom[0xae];
+    gameID[3] = rom[0xaf];
+    gameID[4] = 0;
+
+    NSLog(@"VBA: GameID in ROM is: %s\n", gameID);
+
+    // Load per-game settings from vba-over.ini
+    [self loadOverrides:[NSString stringWithFormat:@"%s", gameID]];
+
+    // Apply settings
+    rtcEnable(_enableRTC);
+    mirroringEnable = _enableMirroring;
+    doMirroring(mirroringEnable);
+    cpuSaveType = _cpuSaveType;
+    if(_flashSize == 0x10000 || _flashSize == 0x20000)
+        flashSetSize(_flashSize);
+
+    soundInit();
+    soundSetSampleRate(32768); // 44100 chirps
+    //soundFiltering = 0.0;
+    //soundInterpolation = false;
+
+    soundReset();
+
+    CPUInit(0, false);
+    CPUReset();
+
+    // Load battery save or migrate old one
+    NSString *extensionlessFilename = [[_romFile lastPathComponent] stringByDeletingPathExtension];
+    NSURL *batterySavesDirectory = [NSURL fileURLWithPath:[self batterySavesDirectoryPath]];
+    [[NSFileManager defaultManager] createDirectoryAtURL:batterySavesDirectory withIntermediateDirectories:YES attributes:nil error:nil];
+    _saveFile = [batterySavesDirectory URLByAppendingPathComponent:[extensionlessFilename stringByAppendingPathExtension:@"sav2"]];
+
+    if ([_saveFile checkResourceIsReachableAndReturnError:nil] && vba.emuReadBattery([[_saveFile path] UTF8String]))
+        NSLog(@"VBA: Battery loaded");
+    else
+        [self migrateSaveFile];
+
+    emulating = 1;
+
+    return YES;
+}
 
 - (void)executeFrame
 {
@@ -200,58 +147,38 @@ static void writeSaveFile(const char* path, int type)
 
 - (void)executeFrameSkippingFrame:(BOOL)skip
 {
-    snes_run();
-}
+    _haveFrame = NO;
 
-- (BOOL)loadFileAtPath:(NSString *)path error:(NSError **)error
-{
-	memset(pad, 0, sizeof(int16_t) * 10);
-
-    uint8_t *data;
-    unsigned size;
-    romName = [path copy];
-
-    //load cart, read bytes, get length
-    NSData *dataObj = [NSData dataWithContentsOfFile:[romName stringByStandardizingPath]];
-    if(dataObj == nil) return false;
-
-    size = [dataObj length];
-    data = (uint8_t *)[dataObj bytes];
-
-    snes_set_environment(environment_callback);
-	snes_init();
-	
-    snes_set_video_refresh(video_callback);
-    snes_set_input_poll(input_poll_callback);
-    snes_set_input_state(input_state_callback);
-	
-    if(snes_load_cartridge_normal(NULL, data, size))
+    while (!_haveFrame)
     {
-        NSString *path = romName;
-        NSString *extensionlessFilename = [[path lastPathComponent] stringByDeletingPathExtension];
-
-        NSString *batterySavesDirectory = [self batterySavesDirectoryPath];
-
-        if([batterySavesDirectory length] != 0)
-        {
-            [[NSFileManager defaultManager] createDirectoryAtPath:batterySavesDirectory withIntermediateDirectories:YES attributes:nil error:NULL];
-
-            NSString *filePath = [batterySavesDirectory stringByAppendingPathComponent:[extensionlessFilename stringByAppendingPathExtension:@"sav"]];
-
-            loadSaveFile([filePath UTF8String], SNES_MEMORY_CARTRIDGE_RAM);
-        }
-
-        soundSetSampleRate(sampleRate);
-
-        snes_run();
-
-        return YES;
+        vba.emuMain(vba.emuCount);
     }
-
-    return NO;
 }
 
-#pragma mark Video
+- (void)resetEmulation
+{
+    vba.emuReset();
+}
+
+- (void)stopEmulation
+{
+    emulating = 0;
+
+    [self writeSaveFile];
+
+    vba.emuCleanUp();
+    soundShutdown();
+
+    [super stopEmulation];
+}
+
+- (NSTimeInterval)frameInterval
+{
+    return 59.727501;
+}
+
+# pragma mark - Video
+
 - (const void *)videoBuffer
 {
     return videoBuffer;
@@ -259,7 +186,7 @@ static void writeSaveFile(const char* path, int type)
 
 - (OEIntRect)screenRect
 {
-    return OEIntRectMake(0, 0, videoWidth, videoHeight);
+    return OEIntRectMake(0, 0, 240, 160);
 }
 
 - (OEIntSize)bufferSize
@@ -272,39 +199,6 @@ static void writeSaveFile(const char* path, int type)
     return OEIntSizeMake(3, 2);
 }
 
-- (void)resetEmulation
-{
-    snes_reset();
-}
-
-- (void)stopEmulation
-{
-    NSString *path = romName;
-    NSString *extensionlessFilename = [[path lastPathComponent] stringByDeletingPathExtension];
-
-    NSString *batterySavesDirectory = [self batterySavesDirectoryPath];
-
-    if([batterySavesDirectory length] != 0)
-    {
-
-        [[NSFileManager defaultManager] createDirectoryAtPath:batterySavesDirectory withIntermediateDirectories:YES attributes:nil error:NULL];
-
-        NSLog(@"Trying to save SRAM");
-
-        NSString *filePath = [batterySavesDirectory stringByAppendingPathComponent:[extensionlessFilename stringByAppendingPathExtension:@"sav"]];
-
-        writeSaveFile([filePath UTF8String], SNES_MEMORY_CARTRIDGE_RAM);
-    }
-
-    snes_term();
-    [super stopEmulation];
-}
-
-- (void)dealloc
-{
-    free(videoBuffer);
-}
-
 - (GLenum)pixelFormat
 {
     return GL_BGRA;
@@ -312,22 +206,19 @@ static void writeSaveFile(const char* path, int type)
 
 - (GLenum)pixelType
 {
-    return GL_UNSIGNED_SHORT_1_5_5_5_REV;
+    return GL_UNSIGNED_INT_8_8_8_8_REV;
 }
 
 - (GLenum)internalPixelFormat
 {
-    return GL_RGB5;
+    return GL_RGB8;
 }
+
+# pragma mark - Audio
 
 - (double)audioSampleRate
 {
-    return sampleRate ? sampleRate : 32000;
-}
-
-- (NSTimeInterval)frameInterval
-{
-    return frameInterval ? frameInterval : 59.727;
+    return soundGetSampleRate();
 }
 
 - (NSUInteger)channelCount
@@ -335,60 +226,44 @@ static void writeSaveFile(const char* path, int type)
     return 2;
 }
 
+# pragma mark - Save States
+
 - (void)saveStateToFileAtPath:(NSString *)fileName completionHandler:(void (^)(BOOL, NSError *))block
 {
-    int serial_size = snes_serialize_size();
-    NSMutableData *stateData = [NSMutableData dataWithLength:serial_size];
-
-    if(!snes_serialize((uint8_t *)[stateData mutableBytes], serial_size))
-    {
-        NSError *error = [NSError errorWithDomain:OEGameCoreErrorDomain code:OEGameCoreCouldNotSaveStateError userInfo:@{
-            NSLocalizedDescriptionKey : @"Save state data could not be written",
-            NSLocalizedRecoverySuggestionErrorKey : @"The emulator could not write the state data."
-        }];
-        block(NO, error);
-        return;
-    }
-
-    __autoreleasing NSError *error = nil;
-    BOOL success = [stateData writeToFile:fileName options:NSDataWritingAtomic error:&error];
-
-    block(success, success ? nil : error);
+    BOOL success = vba.emuWriteState([fileName UTF8String]);
+    if(block) block(success==YES, nil);
 }
 
 - (void)loadStateFromFileAtPath:(NSString *)fileName completionHandler:(void (^)(BOOL, NSError *))block
 {
-    __autoreleasing NSError *error = nil;
-    NSData *data = [NSData dataWithContentsOfFile:fileName options:NSDataReadingMappedIfSafe | NSDataReadingUncached error:&error];
+    BOOL success = vba.emuReadState([fileName UTF8String]);
+    if(block) block(success==YES, nil);
+}
 
-    if(data == nil)
-    {
-        block(NO, error);
-        return;
-    }
+# pragma mark - Input
 
-    int serial_size = snes_serialize_size();
-    if(serial_size != [data length])
-    {
-        NSError *error = [NSError errorWithDomain:OEGameCoreErrorDomain code:OEGameCoreStateHasWrongSizeError userInfo:@{
-            NSLocalizedDescriptionKey : @"Save state has wrong file size.",
-            NSLocalizedRecoverySuggestionErrorKey : [NSString stringWithFormat:@"The size of the file %@ does not have the right size, %d expected, got: %ld.", fileName, serial_size, [data length]],
-        }];
-        block(NO, error);
-        return;
-    }
+enum {
+    KEY_BUTTON_A      = 1 << 0,
+    KEY_BUTTON_B      = 1 << 1,
+    KEY_BUTTON_SELECT = 1 << 2,
+    KEY_BUTTON_START  = 1 << 3,
+    KEY_RIGHT         = 1 << 4,
+    KEY_LEFT          = 1 << 5,
+    KEY_UP            = 1 << 6,
+    KEY_DOWN          = 1 << 7,
+    KEY_BUTTON_R      = 1 << 8,
+    KEY_BUTTON_L      = 1 << 9
+};
+const int GBAMap[] = {KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_BUTTON_A, KEY_BUTTON_B, KEY_BUTTON_L, KEY_BUTTON_R, KEY_BUTTON_START, KEY_BUTTON_SELECT};
 
-    if(!snes_unserialize((uint8_t *)[data bytes], serial_size))
-    {
-        NSError *error = [NSError errorWithDomain:OEGameCoreErrorDomain code:OEGameCoreCouldNotLoadStateError userInfo:@{
-            NSLocalizedDescriptionKey : @"The save state data could not be read",
-            NSLocalizedRecoverySuggestionErrorKey : [NSString stringWithFormat:@"Could not read the file state in %@.", fileName]
-        }];
-        block(NO, error);
-        return;
-    }
-    
-    block(YES, nil);
+- (oneway void)didPushGBAButton:(OEGBAButton)button forPlayer:(NSUInteger)player;
+{
+    pad[player - 1] |= GBAMap[button];
+}
+
+- (oneway void)didReleaseGBAButton:(OEGBAButton)button forPlayer:(NSUInteger)player;
+{
+    pad[player - 1] &= ~GBAMap[button];
 }
 
 #pragma mark - Cheats
@@ -399,22 +274,22 @@ NSMutableDictionary *cheatList = [[NSMutableDictionary alloc] init];
 {
     // Sanitize
     code = [code stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-    
+
     // VBA expects cheats UPPERCASE
     code = [code uppercaseString];
-    
+
     // Remove any spaces
     code = [code stringByReplacingOccurrencesOfString:@" " withString:@""];
-    
+
     if (enabled)
         [cheatList setValue:@YES forKey:code];
     else
         [cheatList removeObjectForKey:code];
-    
+
     cheatsDeleteAll(false); // Old values not restored by default. Dunno if matters much to cheaters
-    
+
     NSArray *multipleCodes = [[NSArray alloc] init];
-    
+
     // Apply enabled cheats found in dictionary
     for (id key in cheatList)
     {
@@ -422,7 +297,7 @@ NSMutableDictionary *cheatList = [[NSMutableDictionary alloc] init];
         {
             // Handle multi-line cheats
             multipleCodes = [key componentsSeparatedByString:@"+"];
-            
+
             for (NSString *singleCode in multipleCodes)
             {
                 if ([singleCode length] == 11 || [singleCode length] == 13 || [singleCode length] == 17) // Code with Address:Value
@@ -430,30 +305,488 @@ NSMutableDictionary *cheatList = [[NSMutableDictionary alloc] init];
                     // XXXXXXXX:YY || XXXXXXXX:YYYY || XXXXXXXX:YYYYYYYY
                     cheatsAddCheatCode([singleCode UTF8String], "code");
                 }
-                
+
                 if ([singleCode length] == 12) // v1 and v2 GameShark/CodeBreaker code
                 {
                     // VBA expects 12-character GameShark/CodeBreaker codes in format: XXXXXXXX YYYY
                     NSMutableString *formattedCode = [NSMutableString stringWithString:singleCode];
                     [formattedCode insertString:@" " atIndex:8];
-                    
+
                     cheatsAddCBACode([formattedCode UTF8String], "code");
                 }
-                
+
                 if ([singleCode length] == 16) // GameShark and Action Replay
                 {
                     if ([type isEqual: @"GameShark"])
                         cheatsAddGSACode([singleCode UTF8String], "code", false);
-                    
+
                     else if ([type isEqual: @"Action Replay"])
                         cheatsAddGSACode([singleCode UTF8String], "code", true); // true = v3 AR code
-                    
+
                     else // default to GBA SP GameShark code (can't determine GS vs AR because same length)
                         cheatsAddGSACode([singleCode UTF8String], "code", false);
                 }
             }
         }
     }
+}
+
+# pragma mark - Misc Helper Methods
+
+- (void)loadOverrides:(NSString *)gameID
+{
+    // Set defaults
+    _enableRTC       = NO;
+    _enableMirroring = NO;
+    _useBIOS         = NO;
+    _cpuSaveType     = 0;
+    _flashSize       = 0x10000;
+
+    // Read in vba-over.ini and break it into an array of strings
+    NSString *resourcePath = [[[self owner] bundle] resourcePath];
+    NSString *iniPath = [resourcePath stringByAppendingPathComponent:@"vba-over.ini"];
+    NSString *iniString = [NSString stringWithContentsOfFile:iniPath encoding:NSUTF8StringEncoding error:NULL];
+    NSArray *settings = [iniString componentsSeparatedByString:@"\n"];
+
+    BOOL matchFound = NO;
+    NSMutableDictionary *overridesFound = [[NSMutableDictionary alloc] init];
+    NSString *temp;
+
+    // Check if vba-over.ini has per-game settings for our gameID
+    for (NSString *s in settings)
+    {
+        temp = nil;
+
+        if ([s hasPrefix:@"["])
+        {
+            NSScanner *scanner = [NSScanner scannerWithString:s];
+            [scanner scanString:@"[" intoString:nil];
+            [scanner scanUpToString:@"]" intoString:&temp];
+
+            if([temp caseInsensitiveCompare:gameID] == NSOrderedSame)
+            {
+                matchFound = YES;
+                _romID = temp;
+            }
+
+            continue;
+        }
+
+        else if (matchFound && [s hasPrefix:@"saveType="])
+        {
+            NSScanner *scanner = [NSScanner scannerWithString:s];
+            [scanner scanString:@"saveType=" intoString:nil];
+            [scanner scanUpToString:@"\n" intoString:&temp];
+            _cpuSaveType = [temp intValue];
+            [overridesFound setObject:temp forKey:@"CPU saveType"];
+
+            continue;
+        }
+
+        else if (matchFound && [s hasPrefix:@"rtcEnabled="])
+        {
+            NSScanner *scanner = [NSScanner scannerWithString:s];
+            [scanner scanString:@"rtcEnabled=" intoString:nil];
+            [scanner scanUpToString:@"\n" intoString:&temp];
+            _enableRTC = [temp boolValue];
+            [overridesFound setObject:temp forKey:@"rtcEnabled"];
+
+            continue;
+        }
+
+        else if (matchFound && [s hasPrefix:@"flashSize="])
+        {
+            NSScanner *scanner = [NSScanner scannerWithString:s];
+            [scanner scanString:@"flashSize=" intoString:nil];
+            [scanner scanUpToString:@"\n" intoString:&temp];
+            _flashSize = [temp intValue];
+            [overridesFound setObject:temp forKey:@"flashSize"];
+
+            continue;
+        }
+
+        else if (matchFound && [s hasPrefix:@"mirroringEnabled="])
+        {
+            NSScanner *scanner = [NSScanner scannerWithString:s];
+            [scanner scanString:@"mirroringEnabled=" intoString:nil];
+            [scanner scanUpToString:@"\n" intoString:&temp];
+            _enableMirroring = [temp boolValue];
+            [overridesFound setObject:temp forKey:@"mirroringEnabled"];
+
+            continue;
+        }
+
+        else if (matchFound && [s hasPrefix:@"useBios="])
+        {
+            NSScanner *scanner = [NSScanner scannerWithString:s];
+            [scanner scanString:@"useBios=" intoString:nil];
+            [scanner scanUpToString:@"\n" intoString:&temp];
+            _useBIOS = [temp boolValue];
+            [overridesFound setObject:temp forKey:@"useBios"];
+
+            continue;
+        }
+
+        else if (matchFound)
+            break;
+    }
+
+    if (matchFound)
+        NSLog(@"VBA: overrides found: %@", overridesFound);
+}
+
+- (void)writeSaveFile
+{
+    if (vba.emuWriteBattery([[_saveFile path] UTF8String]))
+        NSLog(@"VBA: Battery saved");
+}
+
+/*
+ This migration method is meant to correct broken behavior in forks of VBA/VBA-M so that we can reuse battery saves with our unmodified VBA-M core port. Forks vba-next/vbam-libretro created battery saves incompatible with vanilla VBA-M. Problems include:
+
+ - EEPROM and FLASH all arbitrarily saved as 139KB (139264 bytes) instead of correct sizes.
+ - SRAM sometimes saved incorrectly as 8KB (8192 bytes) instead of proper 66KB (65536 bytes).
+ - FLASH sometimes saved corrupt/empty 66KB files instead of saves meant to be 131KB (131072 bytes).
+ - Battery save files always generated even if a game did not support saving.
+ */
+- (void)migrateSaveFile
+{
+    // Build a path to the old save file and check if it exists
+    NSURL *extensionlessFilename = [_saveFile URLByDeletingPathExtension];
+    NSURL *saveFileToMigrate = [extensionlessFilename URLByAppendingPathExtension:@"sav"];
+
+    if (![saveFileToMigrate checkResourceIsReachableAndReturnError:nil])
+        return;
+
+    /*
+     +----------------+----------+-------------+-----------------+--------------------------------------+
+     |     Format     | saveType | cpuSaveType |  Size in Bytes  |            Example Games             |
+     +----------------+----------+-------------+-----------------+--------------------------------------|
+     |  (AUTODETECT)  |    0     |      0      |        -        |                                      |
+     |  SRAM          |    1     |      2      |      65536*     | F-Zero, Kirby Nightmare in Dreamland |
+     |  FLASH         |    2     |      3      | 65536 or 131072 | Golden Sun, Pokemon Emerald          |
+     |  EEPROM        |    3     |      1      |   512 or 8192   | Super Mario Advance, LoZ: Minish Cap |
+     |  EEPROM+Sensor |    3     |      4      |   512 or 8192   | Yoshi's Universal Gravitation        |
+     |  (NONE)        |    5     |      5      |        -        |                                      |
+     +-----------------------------------------------------------+--------------------------------------+
+     * According to some docs, SRAM should be 32768 bytes but VBA saves SRAM as 65536
+     Note: `saveType` = `gbaSaveType` global save var, `cpuSaveType` = `saveType=` in vba-over.ini
+     See: GBA.cpp:3500 and http://problemkaputt.de/gbatek.htm#gbacartbackupids
+     */
+
+    // Step 0
+    // Backup original save file as .sav.old
+    NSFileManager *fileManager = [NSFileManager defaultManager];
+    NSURL *backupSaveFile = [saveFileToMigrate URLByAppendingPathExtension:@"old"];
+    [fileManager copyItemAtURL:saveFileToMigrate toURL:backupSaveFile error:nil];
+
+    // Step 1
+    // Run the CPU for 500 cycles to try and determine the save type
+    // Seems high but save types for some games cannot be determined until 300+ cycles (e.g. Golden Sun)
+    _migratingSave = YES;
+
+    for (int i = 0; i < 500; i++)
+    {
+        vba.emuMain(vba.emuCount);
+    }
+
+    NSLog(@"saveType: %d eepromInUse %d flashSize %d eepromSize %d", saveType, eepromInUse, flashSize, eepromSize);
+
+    // Step 2
+    // If VBA did not determine the save type while cycling the CPU, fall back to lookup by the GBA Cart Backup ID. Sometimes VBA cannot determine save types until certain points in game when memory is accessed. This routine, adapted from Util.cpp, is rarely used as cycling the CPU is usually enough.
+    // Note: Lookup via GBA Cart Backup ID is not 100% accurate http://zork.net/~st/jottings/GBA_saves.html
+    if (saveType == 0 && !eepromInUse)
+    {
+        uint8_t *data;
+        size_t size;
+
+        // Load GBA cart, read bytes, get length
+        NSData *dataObj = [NSData dataWithContentsOfURL:[_romFile URLByStandardizingPath]];
+        if(dataObj == nil) return;
+        size = [dataObj length];
+        data = (uint8_t *)[dataObj bytes];
+
+        uint32_t *p = (uint32_t *)data;
+        uint32_t *end = (uint32_t *)(data + size);
+
+        while(p < end) {
+            uint32_t d = *((uint32_t *)p);
+
+            if(d == 0x52504545) {
+                if(memcmp(p, "EEPROM_", 7) == 0) {
+                    if(saveType == 0)
+                        saveType = 3;
+                }
+            } else if (d == 0x4D415253) {
+                if(memcmp(p, "SRAM_", 5) == 0) {
+                    if(saveType == 0)
+                        saveType = 1;
+                }
+            } else if (d == 0x53414C46) {
+                if(memcmp(p, "FLASH1M_", 8) == 0) {
+                    if(saveType == 0) {
+                        saveType = 2;
+                        flashSize = 0x20000;
+                    }
+                } else if(memcmp(p, "FLASH", 5) == 0) {
+                    if(saveType == 0) {
+                        saveType = 2;
+                        flashSize = 0x10000;
+                    }
+                }
+            } else if (d == 0x52494953) {
+                if(memcmp(p, "SIIRTC_V", 8) == 0)
+                    _enableRTC = true;
+            }
+            p++;
+        }
+        // if no matches found, then set it to NONE
+        if(saveType == 0) {
+            saveType = 5;
+        }
+
+        if (saveType == 0 || saveType == 5) NSLog(@"saveType 0 NONE");
+        if (saveType == 3) NSLog(@"saveType 3 EEPROM_");
+        if (saveType == 1) NSLog(@"saveType 1 SRAM_");
+        if (saveType == 2) NSLog(@"saveType 2 FLASH size %d", flashSize);
+        if (_enableRTC) NSLog(@"rtcFound");
+    }
+
+    // Step 3
+    // Migrate save file if needed
+    uint8_t *saveFileData;
+    size_t saveFileSize;
+
+    // Load save file, read bytes, get length
+    NSData *dataObj = [NSData dataWithContentsOfURL:saveFileToMigrate];
+    if(dataObj == nil) return;
+    saveFileSize = [dataObj length];
+    saveFileData = (uint8_t *)[dataObj bytes];
+
+    // EEPROM saves
+
+    // 139KB to 8KB - remove the front 131072 bytes
+    if (eepromInUse && eepromSize == 8192 && saveFileSize == 139264)
+        memmove(saveFileData, saveFileData + 131072, saveFileSize -= 131072);
+
+    // 139KB to 512 bytes - remove the front 131072 and last 7680 bytes
+    else if (eepromInUse && eepromSize == 512 && saveFileSize == 139264)
+    {
+        memmove(saveFileData, saveFileData + 131072, saveFileSize -= 131072);
+        saveFileData[512] = 0; // null terminate to drop the last 7680 bytes
+        saveFileSize = 512;
+    }
+
+    // FLASH saves
+
+    // 139KB to 131KB - remove the last 8192 bytes
+    else if (saveType == 2 && flashSize == 131072 && saveFileSize == 139264)
+    {
+        saveFileData[131072] = 0;
+        saveFileSize = 131072;
+    }
+    // 139KB to 66KB  - remove the last 73728 bytes
+    else if (saveType == 2 && flashSize == 65536 && saveFileSize == 139264)
+    {
+        saveFileData[65536] = 0;
+        saveFileSize = 65536;
+    }
+    // Case where some 131KB FLASH saved as 66KB with nothing but 0xFF bytes and no save data
+    // All we can do is delete so the game doesn't crash
+    else if (saveType == 2 && flashSize == 131072 && saveFileSize == 65536)
+    {
+        [fileManager removeItemAtURL:saveFileToMigrate error:nil];
+        CPUReset();
+        _migratingSave = NO;
+        return;
+    }
+
+    // SRAM saves
+
+    // Case where some 66KB SRAM saved as 8KB - add 57344 bytes of 0xFF to the end
+    // e.g. Kirby Nightmare in Dreamland
+    else if (saveType == 1 && saveFileSize == 8192)
+    {
+        NSMutableData *appendedData = [NSMutableData dataWithBytes:saveFileData length:saveFileSize];
+        uint8_t *bytesToAppend = (uint8_t *)malloc(57344);
+        memset(bytesToAppend, 0xFF, 57344);
+        NSData *append = [NSData dataWithBytesNoCopy:bytesToAppend length:57344 freeWhenDone:YES];
+        [appendedData appendBytes:[append bytes] length:[append length]];
+
+        saveFileData = (uint8_t *)[appendedData bytes];
+        saveFileSize = [appendedData length];
+    }
+
+    else
+    {
+        // Note: SRAM should normally not need migration since already 66KB
+        NSLog(@"VBA: Did not migrate save file because unnecessary or not detected.");
+    }
+
+    // Step 4
+    // Save migrated file to .sav2 and delete old save file
+    if (saveFileSize != 139264)
+    {
+        NSError *error = nil;
+        NSURL *extensionlessFilename = [saveFileToMigrate URLByDeletingPathExtension];
+        NSURL *migratedSaveFile = [extensionlessFilename URLByAppendingPathExtension:@"sav2"];
+        NSData *outData = [NSData dataWithBytes:saveFileData length:saveFileSize];
+
+        [outData writeToURL:migratedSaveFile options:NSDataWritingAtomic error:&error];
+
+        if (error)
+        {
+            NSLog(@"VBA: Error writing migrated save file: %@", error);
+            CPUReset();
+            _migratingSave = NO;
+            return;
+        }
+
+        NSLog(@"VBA: Writing new save file: %@", saveFileToMigrate);
+
+        // Reset because we ran the CPU
+        CPUReset();
+        _migratingSave = NO;
+
+        if (vba.emuReadBattery([[migratedSaveFile path] UTF8String]))
+            NSLog(@"VBA: Battery loaded");
+    }
+
+    // Delete old save file since we created a backup .sav.old
+    [fileManager removeItemAtURL:saveFileToMigrate error:nil];
+}
+
+// VBA internal functions and stubs
+uint16_t systemColorMap16[0x10000];
+uint32_t systemColorMap32[0x10000];
+int systemColorDepth = 32;
+int systemRedShift = 19;
+int systemGreenShift = 11;
+int systemBlueShift = 3;
+int RGB_LOW_BITS_MASK = 0x00010101;
+int systemDebug = 0;
+int systemVerbose = 0;
+int systemFrameSkip = 0;
+int systemSaveUpdateCounter = SYSTEM_SAVE_NOT_UPDATED;
+int systemSpeed = 0;
+uint32_t systemGetClock()
+{
+    //struct timeval tv;
+
+    //gettimeofday(&tv, NULL);
+    //return tv.tv_sec*1000;
+    return 0;
+}
+
+int systemGetSensorX(void) {return 0;}
+int systemGetSensorY(void) {return 0;}
+bool systemPauseOnFrame() {return false;}
+bool systemReadJoypads() {return true;}
+bool systemCanChangeSoundQuality() {return false;} // ?
+void (*dbgOutput)(const char *s, uint32_t addr);
+void systemFrame() {}
+void systemShowSpeed(int speed) {}
+void systemScreenCapture(int a) {}
+void systemUpdateMotionSensor() {}
+void systemOnSoundShutdown() {}
+void systemOnWriteDataToSoundBuffer(const uint16_t *finalWave, int length) {}
+
+// VBA video and execution
+void system10Frames(int rate)
+{
+    GET_CURRENT_AND_RETURN();
+
+    if(systemSaveUpdateCounter && !current->_migratingSave)
+    {
+        if(--systemSaveUpdateCounter <= SYSTEM_SAVE_NOT_UPDATED)
+        {
+            [_current writeSaveFile];
+            systemSaveUpdateCounter = SYSTEM_SAVE_NOT_UPDATED;
+        }
+    }
+}
+
+void systemDrawScreen()
+{
+    GET_CURRENT_AND_RETURN();
+
+    current->_haveFrame = YES;
+
+    // Get rid of the first line and the last row
+    dispatch_queue_t the_queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
+
+    dispatch_apply(160, the_queue, ^(size_t y){
+        memcpy(current->videoBuffer + y * 240 * 4, pix + (y + 1) * (240 + 1) * 4, 240 * 4);
+    });
+}
+
+// VBA input
+uint32_t systemReadJoypad(int which)
+{
+    uint32_t res = 0;
+
+    which %= 4;
+    if(which == -1)
+        which = 0;
+
+    res = pad[which];
+
+    // Disallow L+R or U+D of being pressed at the same time
+    if((res & (KEY_RIGHT | KEY_LEFT)) == (KEY_RIGHT | KEY_LEFT)) res &= ~ KEY_RIGHT;
+    if((res & (KEY_UP    | KEY_DOWN)) == (KEY_UP    | KEY_DOWN)) res &= ~ KEY_UP;
+
+    //if((res & 48) == 48)
+    //    res &= ~16;
+    //if((res & 192) == 192)
+    //    res &= ~128;
+
+    return res;
+}
+
+// VBA audio
+class DummySound : public SoundDriver
+{
+public:
+    DummySound();
+    virtual ~DummySound();
+
+    virtual bool init(long sampleRate);
+    virtual void pause();
+    virtual void reset();
+    virtual void resume();
+    virtual void write(uint16_t * finalWave, int length);
+};
+
+DummySound::DummySound() {}
+
+void DummySound::write(u16 * finalWave, int length)
+{
+    GET_CURRENT_AND_RETURN();
+
+    [[current ringBufferAtIndex:0] write:finalWave maxLength:length];
+}
+
+bool DummySound::init(long sampleRate)
+{
+    return true;
+}
+
+DummySound::~DummySound() {}
+void DummySound::pause() {}
+void DummySound::resume() {}
+void DummySound::reset() {}
+
+SoundDriver *systemSoundInit()
+{
+    soundShutdown();
+
+    return new DummySound();
+}
+
+// VBA logging
+void systemMessage(int, const char * str, ...)
+{
+    NSLog(@"VBA message: %s", str);
 }
 
 @end
