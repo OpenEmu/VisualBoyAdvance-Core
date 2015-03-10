@@ -446,6 +446,8 @@ NSMutableDictionary *cheatList = [[NSMutableDictionary alloc] init];
 
  - EEPROM and FLASH all arbitrarily saved as 139KB (139264 bytes) instead of correct sizes.
  - SRAM sometimes saved incorrectly as 8KB (8192 bytes) instead of proper 66KB (65536 bytes).
+ - SRAM sometimes saved incorrectly as 512 bytes instead of proper 66KB, resulting in data loss.
+ - SRAM sometimes saved incorrectly as 139KB (139264 bytes) instead of proper 66KB (65536 bytes).
  - FLASH sometimes saved corrupt/empty 66KB files instead of saves meant to be 131KB (131072 bytes).
  - Battery save files always generated even if a game did not support saving.
  */
@@ -490,8 +492,6 @@ NSMutableDictionary *cheatList = [[NSMutableDictionary alloc] init];
         vba.emuMain(vba.emuCount);
     }
 
-    NSLog(@"saveType: %d eepromInUse %d flashSize %d eepromSize %d", saveType, eepromInUse, flashSize, eepromSize);
-
     // Step 2
     // If VBA did not determine the save type while cycling the CPU, fall back to lookup by the GBA Cart Backup ID. Sometimes VBA cannot determine save types until certain points in game when memory is accessed. This routine, adapted from Util.cpp, is rarely used as cycling the CPU is usually enough.
     // Note: Lookup via GBA Cart Backup ID is not 100% accurate http://zork.net/~st/jottings/GBA_saves.html
@@ -515,7 +515,10 @@ NSMutableDictionary *cheatList = [[NSMutableDictionary alloc] init];
             if(d == 0x52504545) {
                 if(memcmp(p, "EEPROM_", 7) == 0) {
                     if(saveType == 0)
+                    {
                         saveType = 3;
+                        eepromSize = 8192;
+                    }
                 }
             } else if (d == 0x4D415253) {
                 if(memcmp(p, "SRAM_", 5) == 0) {
@@ -552,6 +555,8 @@ NSMutableDictionary *cheatList = [[NSMutableDictionary alloc] init];
         if (_enableRTC) NSLog(@"rtcFound");
     }
 
+    NSLog(@"saveType: %d eepromInUse %d flashSize %d eepromSize %d", saveType, eepromInUse, flashSize, eepromSize);
+
     // Step 3
     // Migrate save file if needed
     uint8_t *saveFileData;
@@ -566,11 +571,11 @@ NSMutableDictionary *cheatList = [[NSMutableDictionary alloc] init];
     // EEPROM saves
 
     // 139KB to 8KB - remove the front 131072 bytes
-    if (eepromInUse && eepromSize == 8192 && saveFileSize == 139264)
+    if ((saveType == 3 || eepromInUse) && eepromSize == 8192 && saveFileSize == 139264)
         memmove(saveFileData, saveFileData + 131072, saveFileSize -= 131072);
 
     // 139KB to 512 bytes - remove the front 131072 and last 7680 bytes
-    else if (eepromInUse && eepromSize == 512 && saveFileSize == 139264)
+    else if ((saveType == 3 || eepromInUse) && eepromSize == 512 && saveFileSize == 139264)
     {
         memmove(saveFileData, saveFileData + 131072, saveFileSize -= 131072);
         saveFileData[512] = 0; // null terminate to drop the last 7680 bytes
@@ -603,8 +608,15 @@ NSMutableDictionary *cheatList = [[NSMutableDictionary alloc] init];
 
     // SRAM saves
 
+    // 139KB to 66KB  - remove the last 73728 bytes
+    else if (saveType == 1 && saveFileSize == 139264)
+    {
+        saveFileData[65536] = 0;
+        saveFileSize = 65536;
+    }
     // Case where some 66KB SRAM saved as 8KB - add 57344 bytes of 0xFF to the end
     // e.g. Kirby Nightmare in Dreamland
+    // Note: This is a lot of potential data lost and might not fix all saves
     else if (saveType == 1 && saveFileSize == 8192)
     {
         NSMutableData *appendedData = [NSMutableData dataWithBytes:saveFileData length:saveFileSize];
@@ -616,16 +628,14 @@ NSMutableDictionary *cheatList = [[NSMutableDictionary alloc] init];
         saveFileData = (uint8_t *)[appendedData bytes];
         saveFileSize = [appendedData length];
     }
-
     else
     {
-        // Note: SRAM should normally not need migration since already 66KB
         NSLog(@"VBA: Did not migrate save file because unnecessary or not detected.");
     }
 
     // Step 4
     // Save migrated file to .sav2 and delete old save file
-    if (saveFileSize != 139264)
+    if (saveFileSize < 139264)
     {
         NSError *error = nil;
         NSURL *extensionlessFilename = [saveFileToMigrate URLByDeletingPathExtension];
@@ -642,7 +652,7 @@ NSMutableDictionary *cheatList = [[NSMutableDictionary alloc] init];
             return;
         }
 
-        NSLog(@"VBA: Writing new save file: %@", saveFileToMigrate);
+        NSLog(@"VBA: Writing new save file: %@", migratedSaveFile);
 
         // Reset because we ran the CPU
         CPUReset();
@@ -650,6 +660,11 @@ NSMutableDictionary *cheatList = [[NSMutableDictionary alloc] init];
 
         if (vba.emuReadBattery([[migratedSaveFile path] UTF8String]))
             NSLog(@"VBA: Battery loaded");
+    }
+    else
+    {
+        CPUReset();
+        _migratingSave = NO;
     }
 
     // Delete old save file since we created a backup .sav.old
