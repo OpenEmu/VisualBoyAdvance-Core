@@ -306,24 +306,26 @@ NSMutableDictionary *cheatList = [[NSMutableDictionary alloc] init];
                     cheatsAddCheatCode([singleCode UTF8String], "code");
                 }
 
-                if ([singleCode length] == 12) // v1 and v2 GameShark/CodeBreaker code
+                if ([singleCode length] == 12) // Codebreaker/GameShark SP/Xploder code
                 {
-                    // VBA expects 12-character GameShark/CodeBreaker codes in format: XXXXXXXX YYYY
+                    // VBA expects 12-character Codebreaker/GameShark SP codes in format: XXXXXXXX YYYY
                     NSMutableString *formattedCode = [NSMutableString stringWithString:singleCode];
                     [formattedCode insertString:@" " atIndex:8];
 
                     cheatsAddCBACode([formattedCode UTF8String], "code");
                 }
 
-                if ([singleCode length] == 16) // GameShark and Action Replay
+                if ([singleCode length] == 16) // GameShark Advance/Action Replay (v1/v2) and Action Replay v3
                 {
+                    // Note: GameShark and Action Replay were synonymous until AR v3. Same codes and devices, but different names by region
                     if ([type isEqual: @"GameShark"])
                         cheatsAddGSACode([singleCode UTF8String], "code", false);
 
+                    // AR v3 was an entirely different device from GS/AR v1/v2, with different code types and encryption
                     else if ([type isEqual: @"Action Replay"])
-                        cheatsAddGSACode([singleCode UTF8String], "code", true); // true = v3 AR code
+                        cheatsAddGSACode([singleCode UTF8String], "code", true); // true = AR v3 code
 
-                    else // default to GBA SP GameShark code (can't determine GS vs AR because same length)
+                    else // default to GS/AR v1/v2 code (can't determine GS/AR v1/v2 vs AR v3 because same length)
                         cheatsAddGSACode([singleCode UTF8String], "code", false);
                 }
             }
