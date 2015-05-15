@@ -73,6 +73,12 @@ void psoundTickfn();
 extern int SOUND_CLOCK_TICKS;   // Number of 16.8 MHz clocks between calls to soundTick()
 extern int soundTicks;          // Number of 16.8 MHz clocks until soundTick() will be called
 
+#define SOUND_SERIAL_SIZE ((sizeof(int)*17) + (sizeof(int[3])*3) + (sizeof(int[4])*6) + sizeof(int[13]) + sizeof(int[15]) + (sizeof(u8[32])*2) + sizeof(u8[0x40]))
+
+
+void soundSerialize(uint8_t *& data);
+void soundDeserialize(const uint8_t *& data);
+
 // Saves/loads emulator state
 #ifdef __LIBRETRO__
 void soundSaveGame( u8 *& );

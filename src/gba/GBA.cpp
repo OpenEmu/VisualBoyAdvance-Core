@@ -577,6 +577,148 @@ void CPUUpdateRenderBuffers(bool force)
   }
 }
 
+unsigned int CPUSerializeState(u8 *data, unsigned int size)
+{
+    if(size >= GBA_SERIAL_SIZE)
+    {
+        uint8_t *orig = data;
+        
+        utilWriteIntMem(data, SAVE_GAME_VERSION);
+        utilWriteMem(data, &rom[0xa0], 16);
+        utilWriteIntMem(data, useBios);
+        utilWriteMem(data, &reg[0], sizeof(reg));
+        
+        utilWriteDataMem(data, saveGameStruct);
+        
+        utilWriteIntMem(data, stopState);
+        utilWriteIntMem(data, IRQTicks);
+        
+        utilWriteMem(data, internalRAM, 0x8000);
+        utilWriteMem(data, paletteRAM, 0x400);
+        utilWriteMem(data, workRAM, 0x40000);
+        utilWriteMem(data, vram, 0x20000);
+        utilWriteMem(data, oam, 0x400);
+        utilWriteMem(data, pix, 4 * 241 * 162);
+        utilWriteMem(data, ioMem, 0x400);
+        
+        eepromSerialize(data);
+        flashSerialize(data);
+        soundSerialize(data);
+        rtcSerialize(data);
+        
+        return data - orig;
+    }
+    else
+    {
+        return 0;
+    }
+}
+
+bool CPUDeserializeState(const u8 *data, unsigned int size)
+{
+    if(size >= GBA_SERIAL_SIZE)
+    {
+        // Don't really care about version.
+        int version = utilReadIntMem(data);
+        if (version != SAVE_GAME_VERSION)
+            return false;
+        
+        char romname[16];
+        utilReadMem(romname, data, 16);
+        if (memcmp(&rom[0xa0], romname, 16) != 0)
+            return false;
+        
+        // Don't care about use bios ...
+        utilReadIntMem(data);
+        
+        utilReadMem(&reg[0], data, sizeof(reg));
+        
+        utilReadDataMem(data, saveGameStruct);
+        
+        stopState = utilReadIntMem(data) ? true : false;
+        
+        IRQTicks = utilReadIntMem(data);
+        if (IRQTicks > 0)
+            intState = true;
+        else
+        {
+            intState = false;
+            IRQTicks = 0;
+        }
+        
+        utilReadMem(internalRAM, data, 0x8000);
+        utilReadMem(paletteRAM, data, 0x400);
+        utilReadMem(workRAM, data, 0x40000);
+        utilReadMem(vram, data, 0x20000);
+        utilReadMem(oam, data, 0x400);
+        utilReadMem(pix, data, 4*241*162);
+        utilReadMem(ioMem, data, 0x400);
+        
+        eepromDeserialize(data);
+        flashDeserialize(data);
+        soundDeserialize(data);
+        rtcDeserialize(data);
+        
+        //// Copypasta stuff ...
+        // set pointers!
+        layerEnable = layerSettings & DISPCNT;
+        
+        CPUUpdateRender();
+        
+        // CPU Update Render Buffers set to true
+        CLEAR_ARRAY(line0);
+        CLEAR_ARRAY(line1);
+        CLEAR_ARRAY(line2);
+        CLEAR_ARRAY(line3);
+        // End of CPU Update Render Buffers set to true
+        
+        CPUUpdateWindow0();
+        CPUUpdateWindow1();
+        gbaSaveType = 0;
+        switch(saveType) {
+            case 0:
+                cpuSaveGameFunc = flashSaveDecide;
+                break;
+            case 1:
+                cpuSaveGameFunc = sramWrite;
+                gbaSaveType = 1;
+                break;
+            case 2:
+                cpuSaveGameFunc = flashWrite;
+                gbaSaveType = 2;
+                break;
+            case 3:
+                break;
+            case 5:
+                gbaSaveType = 5;
+                break;
+            default:
+    #ifdef CELL_VBA_DEBUG
+                systemMessage(MSG_UNSUPPORTED_SAVE_TYPE,
+                              N_("Unsupported save type %d"), saveType);
+    #endif
+                break;
+        }
+        if(eepromInUse)
+            gbaSaveType = 3;
+        
+        systemSaveUpdateCounter = SYSTEM_SAVE_NOT_UPDATED;
+        if(armState) {
+            ARM_PREFETCH;
+        } else {
+            THUMB_PREFETCH;
+        }
+        
+        CPUUpdateRegister(0x204, CPUReadHalfWordQuick(0x4000204));
+        
+        return true;
+    }
+    else
+    {
+        return false;
+    }
+}
+
 #ifdef __LIBRETRO__
 #include <cstddef>
 

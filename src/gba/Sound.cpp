@@ -760,6 +760,30 @@ static void skip_read( gzFile in, int count )
 	}
 }
 
+void soundSerialize(uint8_t *& data)
+{
+    gb_apu->save_state( &state.apu );
+    
+    // Be sure areas for expansion get written as zero
+    memset( dummy_state, 0, sizeof dummy_state );
+    
+    utilWriteDataMem(data, gba_state);
+}
+
+void soundDeserialize(const uint8_t *& data)
+{
+    // Prepare APU and default state
+    reset_apu();
+    gb_apu->save_state( &state.apu );
+    
+    utilReadDataMem( data, gba_state );
+    
+    gb_apu->load_state( state.apu );
+    write_SGCNT0_H( READ16LE( &ioMem [SGCNT0_H] ) & 0x770F );
+    
+    apply_muting();
+}
+
 #ifdef __LIBRETRO__
 void soundSaveGame( u8 *&out )
 #else

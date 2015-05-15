@@ -23,6 +23,7 @@ u8 eepromBuffer[16];
 bool eepromInUse = false;
 int eepromSize = 512;
 
+// ((sizeof(int)*4) + sizeof(bool) + 512 + 16)
 variable_desc eepromSaveData[] = {
   { &eepromMode, sizeof(int) },
   { &eepromByte, sizeof(int) },
@@ -51,6 +52,20 @@ void eepromReset()
   eepromAddress = 0;
   eepromInUse = false;
   eepromSize = 512;
+}
+
+void eepromSerialize(uint8_t *& data)
+{
+    utilWriteDataMem(data, eepromSaveData);
+    utilWriteIntMem(data, eepromSize);
+    utilWriteMem(data, eepromData, 0x2000);
+}
+
+void eepromDeserialize(const uint8_t *& data)
+{
+    utilReadDataMem(data, eepromSaveData);
+    eepromSize = utilReadIntMem(data);
+    utilReadMem(eepromData, data, 0x2000);
 }
 
 #ifdef __LIBRETRO__

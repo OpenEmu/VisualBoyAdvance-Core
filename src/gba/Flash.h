@@ -2,6 +2,10 @@
 #define FLASH_H
 
 #define FLASH_128K_SZ 0x20000
+#define FLASH_SERIAL_SIZE ((sizeof(int)*4) + 0x20000)
+
+extern void flashSerialize(uint8_t *& data);
+extern void flashDeserialize(const uint8_t *& data);
 
 #ifdef __LIBRETRO__
 extern void flashSaveGame(u8 *& data);

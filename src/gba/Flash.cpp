@@ -72,6 +72,16 @@ void flashReset()
   flashBank = 0;
 }
 
+void flashSerialize(uint8_t *& data)
+{
+    utilWriteDataMem(data, flashSaveData3);
+}
+
+void flashDeserialize(const uint8_t *& data)
+{
+    utilReadDataMem(data, flashSaveData3);
+}
+
 #ifdef __LIBRETRO__
 void flashSaveGame(uint8_t *& data)
 {

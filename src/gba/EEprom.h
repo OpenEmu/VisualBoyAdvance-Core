@@ -1,6 +1,11 @@
 #ifndef EEPROM_H
 #define EEPROM_H
 
+#define EEPROM_SERIAL_SIZE ((sizeof(int)*5) + sizeof(bool) + 512 + 16 + 0x2000)
+
+extern void eepromSerialize(uint8_t *& data);
+extern void eepromDeserialize(const uint8_t *& data);
+
 #ifdef __LIBRETRO__
 extern void eepromSaveGame(u8* &data);
 extern void eepromReadGame(const u8 *&data, int version);

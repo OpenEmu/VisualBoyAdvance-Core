@@ -76,6 +76,14 @@ extern bool debugger_last;
 extern int  oldreg[18];
 extern char oldbuffer[10];
 #endif
+#define GBA_SERIAL_SAVE_GAME_STRUCT ((sizeof(u16)*77) + (sizeof(bool)*13) + (sizeof(int)*16) + (sizeof(u32)*9))
+#define GBA_SERIAL_HEADER_SIZE ((sizeof(int)*4) + 16 + sizeof(reg_pair[45]) + GBA_SERIAL_SAVE_GAME_STRUCT)
+#define GBA_SERIAL_RAM_SIZE (0x8000 + 0x400 + 0x40000 + 0x20000 + 0x400 + (4 * 241 * 162) + 0x400)
+
+#define GBA_SERIAL_SIZE (GBA_SERIAL_HEADER_SIZE + GBA_SERIAL_RAM_SIZE + EEPROM_SERIAL_SIZE + FLASH_SERIAL_SIZE + SOUND_SERIAL_SIZE + RTC_SERIAL_SIZE)
+
+extern unsigned int CPUSerializeState(u8 *data, unsigned int size);
+extern bool CPUDeserializeState(const u8 *data, unsigned int size);
 
 extern bool CPUReadGSASnapshot(const char *);
 extern bool CPUReadGSASPSnapshot(const char *);

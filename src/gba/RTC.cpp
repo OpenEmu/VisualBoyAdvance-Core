@@ -9,28 +9,7 @@
 #include <memory.h>
 #include <string.h>
 
-enum RTCSTATE
-{
-   IDLE = 0,
-   COMMAND,
-   DATA,
-   READDATA
-};
-
-typedef struct {
-  u8 byte0;
-  u8 byte1;
-  u8 byte2;
-  u8 command;
-  int dataLen;
-  int bits;
-  RTCSTATE state;
-  u8 data[12];
-  // reserved variables for future
-  u8 reserved[12];
-  bool reserved2;
-  u32 reserved3;
-} RTCCLOCKDATA;
+#include "RTC.h"
 
 static RTCCLOCKDATA rtcClockData;
 static bool rtcEnabled = false;
@@ -202,6 +181,16 @@ void rtcReset()
   rtcClockData.dataLen = 0;
   rtcClockData.bits = 0;
   rtcClockData.state = IDLE;
+}
+
+void rtcSerialize(uint8_t *& data)
+{
+    utilWriteMem(data, &rtcClockData, sizeof(rtcClockData));
+}
+
+void rtcDeserialize(const uint8_t *& data)
+{
+    utilReadMem(&rtcClockData, data, sizeof(rtcClockData));
 }
 
 #ifdef __LIBRETRO__
