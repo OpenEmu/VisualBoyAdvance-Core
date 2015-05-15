@@ -240,6 +240,54 @@ static __weak GBAGameCore *_current;
     if(block) block(success==YES, nil);
 }
 
+- (NSData*)serializeStateWithError:(NSError **)outError
+{
+    NSUInteger size = GBA_SERIAL_SIZE;
+    uint8_t *bytes = (uint8_t *)malloc(size);
+    size_t written = CPUSerializeState(bytes, size);
+    
+    if(written > 0)
+    {
+        return [NSData dataWithBytesNoCopy:(void *)bytes length:size];
+    }
+    else
+    {
+        if(outError)
+        {
+            *outError = [NSError errorWithDomain:OEGameCoreErrorDomain
+                                            code:OEGameCoreCouldNotSaveStateError
+                                        userInfo:@{
+                                                   NSLocalizedDescriptionKey : @"Save state data could not be written",
+                                                   NSLocalizedRecoverySuggestionErrorKey : @"The emulator could not write the state data."
+                                                   }];
+        }
+        
+        return nil;
+    }
+}
+
+- (BOOL)deserializeState:(NSData *)state withError:(NSError **)outError
+{
+    bool success = CPUDeserializeState((const uint8_t *)[state bytes], [state length]);
+    if(success)
+    {
+        return true;
+    }
+    else
+    {
+        if(outError)
+        {
+            *outError = [NSError errorWithDomain:OEGameCoreErrorDomain
+                                            code:OEGameCoreCouldNotLoadStateError
+                                        userInfo:@{
+                                                   NSLocalizedDescriptionKey : @"The save state data could not be read",
+                                                   NSLocalizedRecoverySuggestionErrorKey : @"Could not load data from the save state"
+                                                   }];
+        }
+        return false;
+    }
+}
+
 # pragma mark - Input
 
 enum {
