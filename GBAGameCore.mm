@@ -759,7 +759,7 @@ void systemOnWriteDataToSoundBuffer(const uint16_t *finalWave, int length) {}
 // VBA video and execution
 void system10Frames(int rate)
 {
-    GET_CURRENT_AND_RETURN();
+    GET_CURRENT_OR_RETURN();
 
     if(systemSaveUpdateCounter && !current->_migratingSave)
     {
@@ -773,7 +773,7 @@ void system10Frames(int rate)
 
 void systemDrawScreen()
 {
-    GET_CURRENT_AND_RETURN();
+    GET_CURRENT_OR_RETURN();
 
     current->_haveFrame = YES;
 
@@ -826,7 +826,7 @@ DummySound::DummySound() {}
 
 void DummySound::write(u16 * finalWave, int length)
 {
-    GET_CURRENT_AND_RETURN();
+    GET_CURRENT_OR_RETURN();
 
     [[current ringBufferAtIndex:0] write:finalWave maxLength:length];
 }
