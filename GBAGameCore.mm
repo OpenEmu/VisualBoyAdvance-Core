@@ -142,17 +142,10 @@ static __weak GBAGameCore *_current;
 
 - (void)executeFrame
 {
-    [self executeFrameSkippingFrame:NO];
-}
-
-- (void)executeFrameSkippingFrame:(BOOL)skip
-{
     _haveFrame = NO;
 
     while (!_haveFrame)
-    {
         vba.emuMain(vba.emuCount);
-    }
 }
 
 - (void)resetEmulation
@@ -230,62 +223,48 @@ static __weak GBAGameCore *_current;
 
 - (void)saveStateToFileAtPath:(NSString *)fileName completionHandler:(void (^)(BOOL, NSError *))block
 {
-    BOOL success = vba.emuWriteState([fileName UTF8String]);
-    if(block) block(success==YES, nil);
+    block(vba.emuWriteState(fileName.fileSystemRepresentation), nil);
 }
 
 - (void)loadStateFromFileAtPath:(NSString *)fileName completionHandler:(void (^)(BOOL, NSError *))block
 {
-    BOOL success = vba.emuReadState([fileName UTF8String]);
-    if(block) block(success==YES, nil);
+    block(vba.emuReadState(fileName.fileSystemRepresentation), nil);
 }
 
-- (NSData*)serializeStateWithError:(NSError **)outError
+- (NSData *)serializeStateWithError:(NSError **)outError
 {
-    NSUInteger size = GBA_SERIAL_SIZE;
+    unsigned size = GBA_SERIAL_SIZE;
+    NSMutableData *data = [NSMutableData dataWithLength:size];
+
     uint8_t *bytes = (uint8_t *)malloc(size);
-    size_t written = CPUSerializeState(bytes, size);
+    size_t written = CPUSerializeState((uint8_t *)data.mutableBytes, size);
     
     if(written > 0)
-    {
         return [NSData dataWithBytesNoCopy:(void *)bytes length:size];
+
+    if(outError) {
+        *outError = [NSError errorWithDomain:OEGameCoreErrorDomain code:OEGameCoreCouldNotSaveStateError userInfo:@{
+            NSLocalizedDescriptionKey : @"Save state data could not be written",
+            NSLocalizedRecoverySuggestionErrorKey : @"The emulator could not write the state data."
+        }];
     }
-    else
-    {
-        if(outError)
-        {
-            *outError = [NSError errorWithDomain:OEGameCoreErrorDomain
-                                            code:OEGameCoreCouldNotSaveStateError
-                                        userInfo:@{
-                                                   NSLocalizedDescriptionKey : @"Save state data could not be written",
-                                                   NSLocalizedRecoverySuggestionErrorKey : @"The emulator could not write the state data."
-                                                   }];
-        }
-        
-        return nil;
-    }
+    
+    return nil;
 }
 
 - (BOOL)deserializeState:(NSData *)state withError:(NSError **)outError
 {
-    bool success = CPUDeserializeState((const uint8_t *)[state bytes], [state length]);
-    if(success)
-    {
-        return true;
+    if(CPUDeserializeState((const uint8_t *)[state bytes], (unsigned)[state length]))
+        return YES;
+
+    if(outError) {
+        *outError = [NSError errorWithDomain:OEGameCoreErrorDomain code:OEGameCoreCouldNotLoadStateError userInfo:@{
+            NSLocalizedDescriptionKey : @"The save state data could not be read",
+            NSLocalizedRecoverySuggestionErrorKey : @"Could not load data from the save state"
+        }];
     }
-    else
-    {
-        if(outError)
-        {
-            *outError = [NSError errorWithDomain:OEGameCoreErrorDomain
-                                            code:OEGameCoreCouldNotLoadStateError
-                                        userInfo:@{
-                                                   NSLocalizedDescriptionKey : @"The save state data could not be read",
-                                                   NSLocalizedRecoverySuggestionErrorKey : @"Could not load data from the save state"
-                                                   }];
-        }
-        return false;
-    }
+
+    return NO;
 }
 
 # pragma mark - Input
