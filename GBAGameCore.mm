@@ -236,11 +236,10 @@ static __weak GBAGameCore *_current;
     unsigned size = GBA_SERIAL_SIZE;
     NSMutableData *data = [NSMutableData dataWithLength:size];
 
-    uint8_t *bytes = (uint8_t *)malloc(size);
     size_t written = CPUSerializeState((uint8_t *)data.mutableBytes, size);
-    
+
     if(written > 0)
-        return [NSData dataWithBytesNoCopy:(void *)bytes length:size];
+        return data;
 
     if(outError) {
         *outError = [NSError errorWithDomain:OEGameCoreErrorDomain code:OEGameCoreCouldNotSaveStateError userInfo:@{
